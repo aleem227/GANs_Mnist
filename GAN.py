@@ -6,8 +6,6 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
-from copy import deepcopy
-from torchvision.utils import save_image
 
 # Set random seed for reproducibility
 torch.manual_seed(42)
@@ -91,40 +89,31 @@ d_optimizer = optim.Adam(discriminator.parameters(), lr=lr, betas=(beta1, 0.999)
 
 criterion = nn.BCELoss()
 
-# Early stopping class
-class EarlyStopping:
-    def __init__(self, patience=7, min_delta=0, verbose=False):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.verbose = verbose
-        self.counter = 0
-        self.best_loss = None
-        self.early_stop = False
-        self.best_model = None
+# Add this function after the imports
+def show_real_vs_fake_images(real_images, fake_images, epoch):
+    """Display real and fake images side by side"""
+    plt.figure(figsize=(10, 5))
     
-    def __call__(self, model, loss):
-        if self.best_loss is None:
-            self.best_loss = loss
-            self.best_model = deepcopy(model.state_dict())
-        elif loss > self.best_loss - self.min_delta:
-            self.counter += 1
-            if self.verbose:
-                print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
-            if self.counter >= self.patience:
-                self.early_stop = True
-        else:
-            self.best_loss = loss
-            self.best_model = deepcopy(model.state_dict())
-            self.counter = 0
-
-# Initialize early stopping
-g_early_stopping = EarlyStopping(patience=10, verbose=True)
-d_early_stopping = EarlyStopping(patience=10, verbose=True)
-
-# Modify training loop
-best_fid_score = float('inf')
-running_g_loss = 0
-running_d_loss = 0
+    # Real Images
+    plt.subplot(1, 2, 1)
+    plt.title("Real Images")
+    plt.imshow(torchvision.utils.make_grid(
+        real_images[:16].cpu().view(-1, 1, 28, 28), 
+        nrow=4, normalize=True
+    ).permute(1, 2, 0), cmap='gray')
+    plt.axis('off')
+    
+    # Fake Images
+    plt.subplot(1, 2, 2)
+    plt.title("Fake Images")
+    plt.imshow(torchvision.utils.make_grid(
+        fake_images[:16].cpu().view(-1, 1, 28, 28), 
+        nrow=4, normalize=True
+    ).permute(1, 2, 0), cmap='gray')
+    plt.axis('off')
+    
+    plt.savefig(f'comparison_epoch_{epoch+1}.png')
+    plt.close()
 
 for epoch in range(num_epochs):
     running_g_loss = 0
@@ -167,10 +156,6 @@ for epoch in range(num_epochs):
     avg_g_loss = running_g_loss / len(dataloader)
     avg_d_loss = running_d_loss / len(dataloader)
     
-    # Early stopping checks
-    g_early_stopping(generator, avg_g_loss)
-    d_early_stopping(discriminator, avg_d_loss)
-    
     # Print epoch statistics
     print(f'Epoch [{epoch}/{num_epochs}], '
           f'Avg G_Loss: {avg_g_loss:.4f}, Avg D_Loss: {avg_d_loss:.4f}')
@@ -179,16 +164,8 @@ for epoch in range(num_epochs):
     if (epoch + 1) % 10 == 0:
         with torch.no_grad():
             fake_images = generator(torch.randn(16, latent_dim).to(device))
-            fake_images = fake_images.view(-1, 1, 28, 28)  # Ensure correct shape for saving
-            save_image(fake_images, f'fake_images_epoch_{epoch+1}.png', nrow=4, normalize=True)
-    
-    # Check if early stopping criteria met
-    if g_early_stopping.early_stop or d_early_stopping.early_stop:
-        print("Early stopping triggered")
-        # Load best models
-        generator.load_state_dict(g_early_stopping.best_model)
-        discriminator.load_state_dict(d_early_stopping.best_model)
-        break
+            real_images, _ = next(iter(dataloader))
+            show_real_vs_fake_images(real_images, fake_images, epoch)
 
 # Save final models
 torch.save(generator.state_dict(), 'generator.pth')
